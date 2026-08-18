@@ -1,31 +1,31 @@
-# Contributing
+# Contribuer
 
-DwarfStar4 changes should be tested against the failure mode they can realistically
-affect. The project has two regression tracks: correctness and speed. Please
-include the commands you ran, the machine/backend, the model quant, and any
-notable failures in the PR or commit notes.
+Les modifications de DwarfStar4 doivent être testées par rapport au mode de défaillance
+qu'elles peuvent réalistement affecter. Le projet dispose de deux pistes de régression : correction et vitesse. Merci
+d'inclure les commandes que vous avez exécutées, la machine/le backend, le quant du modèle, ainsi que toute
+défaillance notable dans la PR ou les notes de commit.
 
-Do not send PRs affecting one or more inference backends without checking if the
-resulting code is still correct and fast. The only acceptable regression speed
-is when an important correctness bug is fixed and it requires some speed penalty.
+N'envoyez pas de PR affectant un ou plusieurs backends d'inférence sans vérifier si le
+code résultant est toujours correct et rapide. La seule régression de vitesse acceptable
+est celle qui survient lorsqu'un bug de correction important est corrigé et que cela nécessite une certaine pénalité de vitesse.
 
-## Correctness Regression Tests
+## Tests de régression de correction
 
-Build the default backend first:
+Compilez d'abord le backend par défaut :
 
 ```sh
 make clean
 make
 ```
 
-The C test runner is `ds4_test`. Running it without arguments is equivalent to
-`--all`:
+Le lanceur de tests C est `ds4_test`. L'exécuter sans argument équivaut à
+`--all` :
 
 ```sh
 make test
 ```
 
-Useful narrower checks:
+Vérifications ciblées utiles :
 
 ```sh
 ./ds4_test --server
@@ -35,23 +35,23 @@ Useful narrower checks:
 ./ds4_test --metal-kernels
 ```
 
-What they cover:
+Ce qu'ils couvrent :
 
-- `--server`: request parsing, chat rendering, streaming, tool-call parsing,
-  thinking controls, KV disk-cache bookkeeping, and other server-side logic.
-  This is the best quick check for API and prompt-rendering changes.
-- `--logprob-vectors`: compares local token bytes and top-logprob slices against
-  official DeepSeek V4 Flash continuation vectors. This catches tokenizer,
-  template, attention, and logits regressions.
-- `--long-context`: runs a long-context story fact-recall regression from
-  `tests/long_context_story_prompt.txt`. The model must retrieve spelled-out
-  person-number assignments from a long prose prompt and return `Name=number`
-  lines that the test parses.
-- `--tool-call-quality`: exercises actual model behavior for DSML tool-call
-  emission in both fast and exact paths.
-- `--metal-kernels`: isolated Metal kernel numeric checks.
+- `--server` : analyse des requêtes, rendu du chat, streaming, analyse des appels d'outils,
+  contrôles de réflexion, gestion du cache disque KV, et autre logique côté serveur.
+  C'est la meilleure vérification rapide pour les modifications de l'API et du rendu des prompts.
+- `--logprob-vectors` : compare les octets de tokens locaux et les tranches de top-logprob aux
+  vecteurs de continuation officiels de DeepSeek V4 Flash. Cela détecte les régressions du tokenizer,
+  du template, de l'attention et des logits.
+- `--long-context` : exécute une régression de rappel de faits sur une histoire à long contexte depuis
+  `tests/long_context_story_prompt.txt`. Le modèle doit retrouver des associations personne-nombre
+  explicitées dans un long prompt en prose et renvoyer des lignes `Name=number`
+  que le test analyse.
+- `--tool-call-quality` : exerce le comportement réel du modèle pour l'émission d'appels d'outils
+  DSML dans les chemins rapide et exact.
+- `--metal-kernels` : vérifications numériques isolées des kernels Metal.
 
-The runner defaults to `ds4flash.gguf`. Override paths when needed:
+Le lanceur utilise par défaut `ds4flash.gguf`. Remplacez les chemins au besoin :
 
 ```sh
 DS4_TEST_MODEL=/path/to/model.gguf ./ds4_test --logprob-vectors
@@ -59,36 +59,36 @@ DS4_TEST_VECTOR_FILE=/path/to/official.vec ./ds4_test --logprob-vectors
 DS4_TEST_LONG_PROMPT=/path/to/prompt.txt ./ds4_test --long-context
 ```
 
-For CUDA-specific changes, test on a CUDA machine:
+Pour les modifications spécifiques à CUDA, testez sur une machine CUDA :
 
 ```sh
 make
 make cuda-regression
 ```
 
-For CPU portability, at least verify that the CPU target still builds:
+Pour la portabilité CPU, vérifiez au moins que la cible CPU se compile toujours :
 
 ```sh
 make cpu
 ```
 
-The CPU backend is a reference/debug path, not the production performance
-target. Remember that executing the CPU path on Metal can crash the system
-because of a kernel bug in macOS.
+Le backend CPU est un chemin de référence/débogage, pas la cible de performance
+de production. Rappelez-vous qu'exécuter le chemin CPU sur Metal peut faire planter le système
+à cause d'un bug du kernel dans macOS.
 
-## Quality Checks For Quantization Changes
+## Vérifications de qualité pour les modifications de quantification
 
-For GGUF or quantization work, use the official-continuation scorer in
-`gguf-tools/quality-testing`. The test compares how much probability a local
-GGUF assigns to official DeepSeek V4 Flash continuations, token by token.
+Pour le travail sur GGUF ou la quantification, utilisez le scoreur de continuation officielle dans
+`gguf-tools/quality-testing`. Le test compare la probabilité qu'un GGUF local
+attribue aux continuations officielles de DeepSeek V4 Flash, token par token.
 
-Build the scorer:
+Compilez le scoreur :
 
 ```sh
 make -C gguf-tools quality-score
 ```
 
-Then score old and new GGUFs against the same manifest and compare:
+Puis notez les anciens et nouveaux GGUF par rapport au même manifeste et comparez :
 
 ```sh
 gguf-tools/quality-testing/score_official OLD.gguf \
@@ -100,18 +100,18 @@ gguf-tools/quality-testing/score_official NEW.gguf \
 python3 gguf-tools/quality-testing/compare_scores.py /tmp/old.tsv /tmp/new.tsv
 ```
 
-Lower `avg_nll` is better. See
-`gguf-tools/quality-testing/README.md` for collecting or refreshing official
-continuations.
+Un `avg_nll` plus bas est meilleur. Voir
+`gguf-tools/quality-testing/README.md` pour collecter ou rafraîchir les continuations
+officielles.
 
-## Speed Regression Tests
+## Tests de régression de vitesse
 
-Use `ds4-bench` for throughput regressions. It reports instantaneous prefill and
-generation speed at context frontiers, not one whole-run average. Prefill is
-incremental: each row measures only the newly processed suffix since the
-previous frontier.
+Utilisez `ds4-bench` pour les régressions de débit. Il rapporte la vitesse instantanée de prefill et
+de génération aux frontières de contexte, pas une seule moyenne sur l'ensemble de l'exécution. Le prefill est
+incrémental : chaque ligne mesure uniquement le suffixe nouvellement traité depuis la
+frontière précédente.
 
-Default linear sweep:
+Balayage linéaire par défaut :
 
 ```sh
 ./ds4-bench \
@@ -124,20 +124,20 @@ Default linear sweep:
   --csv /tmp/ds4-speed.csv
 ```
 
-Use the same machine, backend, model file, context sweep, power/thermal state,
-and background load when comparing two commits. For backend work, run at least
-one before/after CSV and compare both `prefill_tps` and `gen_tps`. Generation is
-greedy and skips EOS so each frontier gets the same number of generated tokens.
+Utilisez la même machine, le même backend, le même fichier de modèle, le même balayage de contexte, le même état d'alimentation/thermique,
+et la même charge en arrière-plan lorsque vous comparez deux commits. Pour le travail sur les backends, exécutez au moins
+un CSV avant/après et comparez à la fois `prefill_tps` et `gen_tps`. La génération est
+gloutonne et ignore l'EOS afin que chaque frontière obtienne le même nombre de tokens générés.
 
-To generate a graph for a CSV:
+Pour générer un graphique à partir d'un CSV :
 
 ```sh
 python3 speed-bench/plot_speed.py /tmp/ds4-speed.csv --title "Machine t/s"
 ```
 
-## Reporting sessions bugs
+## Signaler des bugs de sessions
 
-For debugging a failing generation, keep the trace:
+Pour déboguer une génération défaillante, conservez la trace :
 
 ```sh
 ./ds4-server --trace /tmp/ds4-trace.txt ...

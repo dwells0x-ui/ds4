@@ -1,17 +1,17 @@
-# Directional Steering
+# Pilotage directionnel
 
-Directional steering is a runtime activation edit for DS4. A steering file is a
-flat `f32` matrix with one normalized 4096-wide direction per layer. During
-inference, ds4 can apply the edit after attention outputs, FFN outputs, or both:
+Le pilotage directionnel (directional steering) est une modification d'activation à l'exécution pour DS4. Un fichier de pilotage est une
+matrice `f32` plate avec une direction normalisée de 4096 de large par couche. Pendant
+l'inférence, ds4 peut appliquer la modification après les sorties d'attention, les sorties FFN, ou les deux :
 
 ```text
 y = y - scale * direction[layer] * dot(direction[layer], y)
 ```
 
-Positive scale removes the represented direction. Negative scale amplifies it.
-With no steering file or zero scales, ds4 follows the normal inference path.
+Une échelle positive supprime la direction représentée. Une échelle négative l'amplifie.
+Sans fichier de pilotage ou avec des échelles nulles, ds4 suit le chemin d'inférence normal.
 
-## Runtime Options
+## Options d'exécution
 
 ```text
 --dir-steering-file FILE   load a 43 x 4096 f32 direction file
@@ -19,23 +19,23 @@ With no steering file or zero scales, ds4 follows the normal inference path.
 --dir-steering-attn F      apply steering after attention outputs; default is 0
 ```
 
-The FFN output is usually the best first target because it is late enough in
-each layer to represent behavior, style, and topic signals. Attention steering
-is available for experiments, but it can be more fragile.
+La sortie FFN est généralement la meilleure première cible car elle est suffisamment tardive dans
+chaque couche pour représenter des signaux de comportement, de style et de sujet. Le pilotage d'attention
+est disponible pour les expériences, mais il peut être plus fragile.
 
-## Verbosity Example
+## Exemple de verbosité
 
-The bundled example builds a style direction from 100 paired prompts. Each pair
-asks for the same information in two ways:
+L'exemple fourni construit une direction de style à partir de 100 paires de prompts. Chaque paire
+demande la même information de deux manières différentes :
 
-- `examples/succinct.txt`: terse target prompts.
-- `examples/verbose.txt`: detailed contrast prompts.
+- `examples/succinct.txt` : prompts cibles concis.
+- `examples/verbose.txt` : prompts de contraste détaillés.
 
-Because the extracted direction is `succinct - verbose`, negative FFN scales
-make answers shorter, while positive FFN scales tend to make answers longer and
-more explanatory.
+Comme la direction extraite est `succinct - verbose`, les échelles FFN négatives
+rendent les réponses plus courtes, tandis que les échelles FFN positives tendent à rendre les réponses plus longues et
+plus explicatives.
 
-Build the vector:
+Construisez le vecteur :
 
 ```sh
 python3 dir-steering/tools/build_direction.py \
@@ -48,14 +48,14 @@ python3 dir-steering/tools/build_direction.py \
   --ctx 512
 ```
 
-This writes:
+Cela écrit :
 
 ```text
 dir-steering/out/verbosity.json
 dir-steering/out/verbosity.f32
 ```
 
-Try a terse run:
+Essayez une exécution concise :
 
 ```sh
 ./ds4 -m ds4flash.gguf --nothink --temp 0 -n 160 \
@@ -64,7 +64,7 @@ Try a terse run:
   -p "Explain why databases use indexes."
 ```
 
-Try a verbose run:
+Essayez une exécution verbeuse :
 
 ```sh
 ./ds4 -m ds4flash.gguf --nothink --temp 0 -n 220 \
@@ -73,15 +73,15 @@ Try a verbose run:
   -p "Explain why databases use indexes."
 ```
 
-The same vector can be used in either direction. The sign is the important part:
+Le même vecteur peut être utilisé dans l'une ou l'autre direction. Le signe est la partie importante :
 
-- negative scale amplifies the succinct target direction;
-- positive scale suppresses that direction and usually gives the model more room
-  to elaborate.
+- une échelle négative amplifie la direction cible concise ;
+- une échelle positive supprime cette direction et donne généralement au modèle plus de latitude
+  pour développer.
 
-## Evaluating Scales
+## Évaluation des échelles
 
-Use the sweep helper to test several strengths on a fixed prompt set:
+Utilisez l'assistant de balayage (sweep) pour tester plusieurs intensités sur un ensemble de prompts fixe :
 
 ```sh
 python3 dir-steering/tools/run_sweep.py \
@@ -94,58 +94,58 @@ python3 dir-steering/tools/run_sweep.py \
   --nothink
 ```
 
-Start with FFN scales between `-1` and `2`. If the model becomes repetitive,
-ignores the prompt, or starts losing factual content, the scale is too strong.
-For this example, `-1` is a good first terse setting and `2` is a good first
-verbose setting. Strong negative scales such as `-2` or `-3` can over-amplify
-the terse direction and collapse into repetition on some prompts.
+Commencez avec des échelles FFN entre `-1` et `2`. Si le modèle devient répétitif,
+ignore le prompt, ou commence à perdre du contenu factuel, l'échelle est trop forte.
+Pour cet exemple, `-1` est un bon premier réglage concis et `2` est un bon premier
+réglage verbeux. Les fortes échelles négatives comme `-2` ou `-3` peuvent sur-amplifier
+la direction concise et s'effondrer en répétition sur certains prompts.
 
-## Observed Effect
+## Effet observé
 
-With the 100-pair vector built from the commands above, local greedy checks
-showed the expected behavior:
+Avec le vecteur de 100 paires construit à partir des commandes ci-dessus, des vérifications gloutonnes (greedy) locales
+ont montré le comportement attendu :
 
-- Prompt: `Explain why databases use indexes.`
-- `--dir-steering-ffn -1`: 67 words, one compact paragraph.
-- `--dir-steering-ffn 0`: 136 words, structured explanation.
-- `--dir-steering-ffn 1`: 140 words, structured explanation with more detail.
+- Prompt : `Explain why databases use indexes.`
+- `--dir-steering-ffn -1` : 67 mots, un paragraphe compact.
+- `--dir-steering-ffn 0` : 136 mots, explication structurée.
+- `--dir-steering-ffn 1` : 140 mots, explication structurée avec plus de détails.
 
-On a prompt that the unsteered model already answered briefly, positive steering
-made the expansion more visible:
+Sur un prompt auquel le modèle non piloté répondait déjà brièvement, le pilotage positif
+a rendu l'expansion plus visible :
 
-- Prompt: `What does DNS do?`
-- `--dir-steering-ffn 0`: 44 words.
-- `--dir-steering-ffn 2`: 171 words, with sections and step-by-step detail.
+- Prompt : `What does DNS do?`
+- `--dir-steering-ffn 0` : 44 mots.
+- `--dir-steering-ffn 2` : 171 mots, avec des sections et un détail étape par étape.
 
-## Building Other Directions
+## Construire d'autres directions
 
-The extractor compares two prompt sets:
+L'extracteur compare deux ensembles de prompts :
 
-- `good-file`: target prompts for the direction you want to represent.
-- `bad-file`: contrast prompts that should be separated from the target.
+- `good-file` : prompts cibles pour la direction que vous voulez représenter.
+- `bad-file` : prompts de contraste qui doivent être séparés de la cible.
 
-It captures DS4 activations from the same local GPU graph used for inference,
-averages target minus contrast, normalizes one vector per layer, and writes both
-metadata JSON and the runtime `.f32` file.
+Il capture les activations DS4 depuis le même graphe GPU local utilisé pour l'inférence,
+moyenne la cible moins le contraste, normalise un vecteur par couche, et écrit à la fois
+le JSON de métadonnées et le fichier `.f32` d'exécution.
 
-Concept removal:
+Suppression de concept :
 
-1. Put concept-heavy prompts in `good-file`.
-2. Put neutral prompts in `bad-file`.
-3. Run with a positive FFN scale.
+1. Placez les prompts riches en concept dans `good-file`.
+2. Placez les prompts neutres dans `bad-file`.
+3. Exécutez avec une échelle FFN positive.
 
-Concept amplification:
+Amplification de concept :
 
-1. Put desired concept prompts in `good-file`.
-2. Put neutral prompts in `bad-file`.
-3. Run with a negative FFN scale.
+1. Placez les prompts du concept souhaité dans `good-file`.
+2. Placez les prompts neutres dans `bad-file`.
+3. Exécutez avec une échelle FFN négative.
 
-Style control:
+Contrôle de style :
 
-1. Put prompts for the target style in `good-file`.
-2. Put contrasting style prompts in `bad-file`.
-3. Use negative scale to amplify the target style, positive scale to reduce it.
+1. Placez les prompts pour le style cible dans `good-file`.
+2. Placez les prompts de style contrastant dans `bad-file`.
+3. Utilisez une échelle négative pour amplifier le style cible, une échelle positive pour le réduire.
 
-The method is not a fine-tune. It is a low-rank runtime edit, so it works best
-for coarse behavior, topic, or style directions that are consistently present in
-the activation captures.
+La méthode n'est pas un fine-tune. C'est une modification à l'exécution de faible rang (low-rank), donc elle fonctionne mieux
+pour des directions grossières de comportement, de sujet ou de style qui sont présentes de manière cohérente dans
+les captures d'activation.

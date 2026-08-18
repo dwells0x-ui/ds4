@@ -1,11 +1,11 @@
-# DS4 on Strix Halo
+# DS4 sur Strix Halo
 
-This is the minimal setup for DS4 ROCm inference on a
-Strix Halo machine with 128 GB RAM and Radeon 8060S (`gfx1151`).
+Voici la configuration minimale pour l'inférence DS4 ROCm sur une
+machine Strix Halo dotée de 128 Go de RAM et d'un Radeon 8060S (`gfx1151`).
 
-## 1. Install ROCm
+## 1. Installer ROCm
 
-On Ubuntu 26.04 LTS, install the ROCm compiler/runtime and libraries used by the Strix Halo backend:
+Sous Ubuntu 26.04 LTS, installez le compilateur/runtime ROCm et les bibliothèques utilisés par le backend Strix Halo :
 
 ```sh
 sudo apt-get update
@@ -18,10 +18,10 @@ sudo apt-get install -y \
   libhipcub-dev
 ```
 
-The backend uses rocWMMA. On this Ubuntu 26.04 setup, `librocwmma-dev`
-installs the top-level rocWMMA headers but misses `rocwmma/internal/`.
-No Ubuntu package currently provides those internal headers. Install a complete
-matching rocWMMA header tree:
+Le backend utilise rocWMMA. Sur cette installation Ubuntu 26.04, `librocwmma-dev`
+installe les en-têtes rocWMMA de premier niveau mais omet `rocwmma/internal/`.
+Aucun paquet Ubuntu ne fournit actuellement ces en-têtes internes. Installez une
+arborescence d'en-têtes rocWMMA complète et correspondante :
 
 ```sh
 git clone --depth 1 --branch rocm-7.1.0 https://github.com/ROCm/rocWMMA.git /tmp/rocWMMA-rocm-7.1.0
@@ -29,8 +29,8 @@ sudo mkdir -p /usr/local/include
 sudo cp -a /tmp/rocWMMA-rocm-7.1.0/library/include/rocwmma /usr/local/include/
 ```
 
-If ROCm is installed under `/usr` but tooling expects `/opt/rocm`, add these
-compatibility links:
+Si ROCm est installé sous `/usr` alors que l'outillage s'attend à `/opt/rocm`, ajoutez ces
+liens de compatibilité :
 
 ```sh
 sudo mkdir -p /opt/rocm/bin
@@ -39,56 +39,56 @@ sudo ln -sfn /usr/lib/x86_64-linux-gnu /opt/rocm/lib
 sudo ln -sfn /usr/include /opt/rocm/include
 ```
 
-## 2. Enable ROCm access
+## 2. Activer l'accès ROCm
 
-The user running DS4 must be able to open `/dev/kfd` and the DRM render node:
+L'utilisateur qui exécute DS4 doit pouvoir ouvrir `/dev/kfd` et le nœud de rendu DRM :
 
 ```sh
 sudo usermod -aG render,video "$USER"
 ```
 
-Log out and back in, or reboot. Verify:
+Déconnectez-vous puis reconnectez-vous, ou redémarrez. Vérifiez :
 
 ```sh
 rocminfo | grep -A80 'Name:                    gfx1151'
 ```
 
-If DS4 says `no ROCm-capable device is detected`, check that `rocminfo` can open
-`/dev/kfd` and that `groups` includes `render`.
+Si DS4 indique `no ROCm-capable device is detected`, vérifiez que `rocminfo` peut ouvrir
+`/dev/kfd` et que `groups` inclut `render`.
 
-## 3. Increase GPU-visible memory
+## 3. Augmenter la mémoire visible par le GPU
 
-A 128 GB Strix Halo system may initially expose only about 62 GB of GPU-visible
-memory. DS4 needs the larger GTT aperture for the 80.76 GiB model plus runtime
-buffers.
+Un système Strix Halo de 128 Go peut initialement n'exposer qu'environ 62 Go de mémoire
+visible par le GPU. DS4 a besoin de l'ouverture GTT plus large pour le modèle de 80,76 Gio
+plus les tampons d'exécution.
 
-Use these kernel parameters:
+Utilisez ces paramètres noyau :
 
 ```text
 amd_iommu=off amdgpu.gttsize=126976 ttm.pages_limit=32505856 ttm.page_pool_size=32505856
 ```
 
-On Ubuntu with GRUB:
+Sous Ubuntu avec GRUB :
 
 ```sh
 sudo cp /etc/default/grub /etc/default/grub.bak
 sudoedit /etc/default/grub
 ```
 
-Set:
+Définissez :
 
 ```text
 GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amd_iommu=off amdgpu.gttsize=126976 ttm.pages_limit=32505856 ttm.page_pool_size=32505856"
 ```
 
-Then:
+Puis :
 
 ```sh
 sudo update-grub
 sudo reboot
 ```
 
-After reboot, verify:
+Après le redémarrage, vérifiez :
 
 ```sh
 cat /proc/cmdline
@@ -96,41 +96,41 @@ sudo dmesg | grep -Ei 'GTT|gttsize|TTM|VRAM'
 rocminfo | grep -A80 'Name:                    gfx1151'
 ```
 
-Expected signs:
+Signes attendus :
 
 ```text
 amdgpu:  126976M of GTT memory ready
 rocminfo gfx1151 pool: 130023424 KB
 ```
 
-## 4. Build DS4
+## 4. Compiler DS4
 
-Use the normal Strix Halo target. It builds the standard binary names:
+Utilisez la cible Strix Halo habituelle. Elle produit les noms de binaires standard :
 
 ```sh
 make strix-halo -j"$(nproc)"
 ```
 
-`make rocm` is an alias for `make strix-halo`.
+`make rocm` est un alias de `make strix-halo`.
 
-## 5. Use the right GGUF
+## 5. Utiliser le bon GGUF
 
-Use the standard IQ2XXS/Q2K/Q8 imatrix GGUF:
+Utilisez le GGUF imatrix IQ2XXS/Q2K/Q8 standard :
 
 ```text
 DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf
 ```
 
-Avoid the mixed IQ2/IQ4 or IQ2/Q4 GGUFs on this machine for now. They put much
-more memory pressure on the ROCm path and can trigger system OOM instead of a
-clean DS4 failure.
+Évitez pour l'instant les GGUF mixtes IQ2/IQ4 ou IQ2/Q4 sur cette machine. Ils exercent
+une pression mémoire bien plus forte sur le chemin ROCm et peuvent déclencher un OOM système
+plutôt qu'un échec DS4 propre.
 
-## 6. Run DS4
+## 6. Exécuter DS4
 
-Run it normally:
+Lancez-le normalement :
 
 ```sh
 ./ds4 -m gguf/DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf
 ```
 
-The ROCm build uses the Strix Halo backend automatically.
+La build ROCm utilise automatiquement le backend Strix Halo.

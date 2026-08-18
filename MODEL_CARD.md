@@ -1,106 +1,105 @@
-# DeepSeek v4 model card synopsis
+# Synopsis de la fiche modèle DeepSeek v4
 
-This document extracts the most important information from the official
-DeepSeek-V4-Flash Hugging Face model card, with emphasis on facts that matter
-for local inference, DS4 development, and benchmark interpretation.
+Ce document extrait les informations les plus importantes de la fiche modèle officielle
+DeepSeek-V4-Flash sur Hugging Face, en mettant l'accent sur les faits qui comptent
+pour l'inférence locale, le développement de DS4 et l'interprétation des benchmarks.
 
-Source: https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash
+Source : https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash
 
-## Model Family
+## Famille de modèles
 
-DeepSeek-V4 is a preview model family with two Mixture-of-Experts language
-models:
+DeepSeek-V4 est une famille de modèles en préversion comprenant deux modèles de langage
+Mixture-of-Experts :
 
-| Model | Total parameters | Active parameters | Context length |
+| Modèle | Paramètres totaux | Paramètres actifs | Longueur de contexte |
 |---|---:|---:|---:|
 | DeepSeek-V4-Flash | 284B | 13B | 1M tokens |
 | DeepSeek-V4-Pro | 1.6T | 49B | 1M tokens |
 
-Flash is the smaller and more efficient model. The model card says Flash-Max can
-approach Pro reasoning performance when given a larger thinking budget, while
-remaining behind Pro on pure knowledge and the most complex agentic tasks.
+Flash est le modèle le plus petit et le plus efficace. La fiche modèle indique que Flash-Max peut
+approcher les performances de raisonnement de Pro lorsqu'on lui accorde un budget de réflexion plus important, tout en
+restant en retrait de Pro sur les connaissances pures et les tâches agentiques les plus complexes.
 
 ## Architecture
 
-DeepSeek-V4 uses long-context compressed attention. The model card calls the
-hybrid design Compressed Sparse Attention (CSA) plus Heavily Compressed
-Attention (HCA). In DS4 terms, each layer keeps a raw sliding-window KV cache
-for the latest 128 tokens. This is the high-resolution local context.
+DeepSeek-V4 utilise une attention compressée à long contexte. La fiche modèle nomme la
+conception hybride Compressed Sparse Attention (CSA) plus Heavily Compressed
+Attention (HCA). En termes DS4, chaque couche conserve un cache KV brut à fenêtre glissante
+pour les 128 derniers tokens. C'est le contexte local à haute résolution.
 
-After that raw window, the model uses layer-dependent compressed KV rows:
+Après cette fenêtre brute, le modèle utilise des lignes KV compressées dépendantes de la couche :
 
-| 0-based layer indexes | DS4 ratio | Extra state | Meaning |
+| Indices de couche (base 0) | Ratio DS4 | État supplémentaire | Signification |
 |---|---:|---|---|
-| 0, 1 | none | none | Raw 128-token sliding window only |
-| even layers from 2 onward | 4 | compressed KV + indexer KV | One compressed row per 4 tokens, with an indexer selecting visible compressed rows |
-| odd layers from 3 onward | 128 | compressed KV | One compressed row per 128 tokens |
+| 0, 1 | aucun | aucun | Fenêtre glissante brute de 128 tokens uniquement |
+| couches paires à partir de 2 | 4 | KV compressé + KV de l'indexeur | Une ligne compressée pour 4 tokens, avec un indexeur sélectionnant les lignes compressées visibles |
+| couches impaires à partir de 3 | 128 | KV compressé | Une ligne compressée pour 128 tokens |
 
-So, after the first two layers, the model alternates ratio-4 and ratio-128
-compressed attention. A token in a compressed layer attends over both the raw
-latest-128-token window and the older compressed history. The compression here
-is time-axis compression: several token positions are pooled into one KV row.
-The attention rows still use the model attention/value dimensions, so raw and
-compressed rows can be consumed by the same mixed-attention computation.
+Ainsi, après les deux premières couches, le modèle alterne entre une attention compressée de ratio 4 et de ratio 128.
+Un token dans une couche compressée porte son attention à la fois sur la fenêtre brute
+des 128 derniers tokens et sur l'historique compressé plus ancien. La compression ici
+est une compression sur l'axe temporel : plusieurs positions de tokens sont regroupées en une seule ligne KV.
+Les lignes d'attention utilisent toujours les dimensions d'attention/valeur du modèle, de sorte que les lignes brutes et
+compressées peuvent être consommées par le même calcul d'attention mixte.
 
-Ratio-4 layers are the selective compressed-attention layers. They maintain a
-second compressed stream for the indexer, and when the compressed history is
-larger than the configured top-k, DS4 scores the compressed rows and selects up
-to 512 of them for attention. Ratio-128 layers are the heavily compressed path:
-they do not have the indexer stream and use the available ratio-128 compressed
-rows directly.
+Les couches de ratio 4 sont les couches d'attention compressée sélective. Elles maintiennent un
+second flux compressé pour l'indexeur, et lorsque l'historique compressé est
+plus grand que le top-k configuré, DS4 note les lignes compressées et en sélectionne jusqu'à
+512 pour l'attention. Les couches de ratio 128 constituent le chemin fortement compressé :
+elles n'ont pas de flux d'indexeur et utilisent directement les lignes compressées de ratio 128 disponibles.
 
-DS4 validates these details from the GGUF metadata. The relevant fixed
-implementation constants are:
+DS4 valide ces détails à partir des métadonnées GGUF. Les constantes d'implémentation
+fixes pertinentes sont :
 
-- Layers: 43
-- Raw sliding-window attention: 128 tokens
-- Indexer heads: 64
-- Indexer head dimension: 128
-- Indexer top-k: 512
+- Couches : 43
+- Attention à fenêtre glissante brute : 128 tokens
+- Têtes de l'indexeur : 64
+- Dimension des têtes de l'indexeur : 128
+- Top-k de l'indexeur : 512
 
-This is the practical reason the model can expose a 1M-token context without a
-standard full KV cache for every token in every layer. The model card reports
-that, at 1M tokens, DeepSeek-V4-Pro needs much less single-token inference
-compute and KV cache than DeepSeek-V3.2.
+C'est la raison pratique pour laquelle le modèle peut exposer un contexte de 1M tokens sans un
+cache KV complet standard pour chaque token dans chaque couche. La fiche modèle rapporte
+qu'à 1M tokens, DeepSeek-V4-Pro nécessite beaucoup moins de calcul d'inférence par token unique
+et de cache KV que DeepSeek-V3.2.
 
-The family also uses:
+La famille utilise également :
 
-- Manifold-Constrained Hyper-Connections (mHC), intended to improve signal
-  propagation stability across layers.
-- The Muon optimizer, used for faster convergence and training stability.
-- A post-training pipeline with domain expert cultivation followed by unified
-  consolidation via on-policy distillation.
+- Manifold-Constrained Hyper-Connections (mHC), destinées à améliorer la stabilité de la
+  propagation du signal à travers les couches.
+- L'optimiseur Muon, utilisé pour une convergence plus rapide et une stabilité d'entraînement accrue.
+- Un pipeline de post-entraînement avec cultivation d'experts de domaine suivie d'une
+  consolidation unifiée via distillation on-policy.
 
-## Precision And Weights
+## Précision et poids
 
-Official download entries include:
+Les entrées de téléchargement officielles comprennent :
 
-| Model | Precision |
+| Modèle | Précision |
 |---|---|
 | DeepSeek-V4-Flash-Base | FP8 Mixed |
 | DeepSeek-V4-Flash | FP4 + FP8 Mixed |
 | DeepSeek-V4-Pro-Base | FP8 Mixed |
 | DeepSeek-V4-Pro | FP4 + FP8 Mixed |
 
-For the instruct models, the model card describes FP4 + FP8 Mixed as using FP4
-for MoE expert parameters and FP8 for most other parameters.
+Pour les modèles instruct, la fiche modèle décrit FP4 + FP8 Mixed comme utilisant FP4
+pour les paramètres des experts MoE et FP8 pour la plupart des autres paramètres.
 
-## Reasoning Modes
+## Modes de raisonnement
 
-The instruct models support three reasoning-effort modes:
+Les modèles instruct prennent en charge trois modes d'effort de raisonnement :
 
-| Mode | Intended behavior | Output shape |
+| Mode | Comportement attendu | Forme de sortie |
 |---|---|---|
-| Non-think | Fast, intuitive replies | `</think>` summary |
-| High | Deliberate reasoning for harder tasks | `<think>... </think>` summary |
-| Max | Largest reasoning budget | Special system prompt plus thinking and summary |
+| Non-think | Réponses rapides et intuitives | Résumé `</think>` |
+| High | Raisonnement délibéré pour les tâches plus difficiles | Résumé `<think>... </think>` |
+| Max | Budget de raisonnement le plus large | Prompt système spécial plus réflexion et résumé |
 
-The model card recommends using at least a 384K-token context window for Think
+La fiche modèle recommande d'utiliser une fenêtre de contexte d'au moins 384K tokens pour Think
 Max.
 
-## Important Flash Benchmarks
+## Benchmarks Flash importants
 
-### DeepSeek-V4-Flash Across Reasoning Modes
+### DeepSeek-V4-Flash selon les modes de raisonnement
 
 | Benchmark | Non-Think | High | Max |
 |---|---:|---:|---:|
@@ -119,7 +118,7 @@ Max.
 
 ### DeepSeek-V4-Flash-Base
 
-The base-model table reports these Flash-Base scores:
+Le tableau du modèle de base rapporte ces scores Flash-Base :
 
 | Benchmark | Shots | Score |
 |---|---:|---:|
@@ -131,108 +130,107 @@ The base-model table reports these Flash-Base scores:
 | GSM8K EM | 8-shot | 90.8 |
 | LongBench-V2 EM | 1-shot | 44.7 |
 
-The model card reports SuperGPQA for the base model table, not in the instruct
-reasoning-mode comparison table.
+La fiche modèle rapporte SuperGPQA dans le tableau du modèle de base, et non dans le tableau
+de comparaison des modes de raisonnement des modèles instruct.
 
-## Chat Template And Encoding
+## Template de chat et encodage
 
-The release does not use a Jinja chat template as the source of truth. The
-official prompt renderer is the Python code in
-`encoding/encoding_dsv4.py`, with examples and tests in the same `encoding`
-directory:
+La version ne s'appuie pas sur un template de chat Jinja comme source de vérité. Le
+moteur de rendu de prompt officiel est le code Python dans
+`encoding/encoding_dsv4.py`, avec des exemples et des tests dans le même répertoire
+`encoding` :
 
 - https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/raw/main/encoding/encoding_dsv4.py
 - https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/raw/main/encoding/test_encoding_dsv4.py
 
-The important special tokens are:
+Les tokens spéciaux importants sont :
 
-| Purpose | Token |
+| Objet | Token |
 |---|---|
-| Beginning of sequence | `<｜begin▁of▁sentence｜>` |
-| End of assistant turn | `<｜end▁of▁sentence｜>` |
-| User turn prefix | `<｜User｜>` |
-| Assistant turn prefix | `<｜Assistant｜>` |
-| Latest reminder prefix | `<｜latest_reminder｜>` |
-| Thinking start | `<think>` |
-| Thinking end / non-thinking marker | `</think>` |
-| DSML tool markup marker | `｜DSML｜` |
+| Début de séquence | `<｜begin▁of▁sentence｜>` |
+| Fin du tour de l'assistant | `<｜end▁of▁sentence｜>` |
+| Préfixe du tour de l'utilisateur | `<｜User｜>` |
+| Préfixe du tour de l'assistant | `<｜Assistant｜>` |
+| Préfixe du dernier rappel | `<｜latest_reminder｜>` |
+| Début de la réflexion | `<think>` |
+| Fin de la réflexion / marqueur de non-réflexion | `</think>` |
+| Marqueur de balisage d'outil DSML | `｜DSML｜` |
 
-The renderer accepts `system`, `user`, `assistant`, `tool`,
-`latest_reminder`, and `developer` roles. The `developer` role is described in
-the Python comments as an internal search-agent role, not as a normal public
-chat role.
+Le moteur de rendu accepte les rôles `system`, `user`, `assistant`, `tool`,
+`latest_reminder` et `developer`. Le rôle `developer` est décrit dans
+les commentaires Python comme un rôle interne d'agent de recherche, et non comme un rôle de chat public normal.
 
-Normal chat mode starts with the BOS token, then system text if present, then
-alternating user and assistant markers. In non-thinking chat mode, a new
-assistant generation is opened with:
+Le mode de chat normal commence par le token BOS, puis le texte système s'il est présent, puis
+l'alternance des marqueurs utilisateur et assistant. En mode de chat sans réflexion, une nouvelle
+génération de l'assistant est ouverte avec :
 
 ```text
 <｜Assistant｜></think>
 ```
 
-That immediate `</think>` tells the model to skip hidden reasoning and produce
-the visible answer. In thinking mode, a new assistant generation is opened with:
+Ce `</think>` immédiat indique au modèle de sauter le raisonnement caché et de produire
+la réponse visible. En mode réflexion, une nouvelle génération de l'assistant est ouverte avec :
 
 ```text
 <｜Assistant｜><think>
 ```
 
-Completed assistant thinking turns are rendered as reasoning content inside
-`<think>...</think>`, followed by the visible answer and the EOS token.
+Les tours de réflexion terminés de l'assistant sont rendus sous forme de contenu de raisonnement à l'intérieur de
+`<think>...</think>`, suivi de la réponse visible et du token EOS.
 
-By default, the Python renderer drops earlier assistant reasoning content before
-the last user message. If tools are present on any message, it disables that
-reasoning drop and keeps the full reasoning/tool context. `reasoning_effort=max`
-also prepends a special high-effort instruction prefix before the first rendered
-message in thinking mode.
+Par défaut, le moteur de rendu Python supprime le contenu de raisonnement antérieur de l'assistant avant
+le dernier message de l'utilisateur. Si des outils sont présents sur un quelconque message, il désactive cette
+suppression du raisonnement et conserve l'intégralité du contexte de raisonnement/d'outils. `reasoning_effort=max`
+ajoute également un préfixe d'instruction spécial de haut effort avant le premier message rendu
+en mode réflexion.
 
-Tool definitions are passed in OpenAI-compatible function schema form, but the
-model is instructed to emit DSML. A tool call is rendered as a DSML
-`tool_calls` block containing one or more `invoke` entries, each with named
-parameters. Parameters carry a `string="true"` flag for raw strings and
-`string="false"` for JSON values such as numbers, booleans, arrays, or objects.
+Les définitions d'outils sont transmises sous forme de schéma de fonction compatible OpenAI, mais
+le modèle est instruit d'émettre du DSML. Un appel d'outil est rendu sous forme de bloc DSML
+`tool_calls` contenant une ou plusieurs entrées `invoke`, chacune avec des paramètres
+nommés. Les paramètres portent un indicateur `string="true"` pour les chaînes brutes et
+`string="false"` pour les valeurs JSON telles que les nombres, booléens, tableaux ou objets.
 
-DeepSeek-V4 does not render standalone `tool` role messages. The Python
-preprocessor converts tool results into user content blocks and renders each
-result as:
+DeepSeek-V4 ne rend pas de messages autonomes de rôle `tool`. Le préprocesseur Python
+convertit les résultats d'outils en blocs de contenu utilisateur et rend chaque
+résultat sous la forme :
 
 ```text
 <tool_result>...</tool_result>
 ```
 
-Tool-result bodies are rendered as raw text. Literal `<`, `>`, and `&` from
-file contents or shell output are preserved; only the exact closing sentinel
-`</tool_result>` is escaped so the wrapper cannot be terminated by data.
+Les corps des résultats d'outils sont rendus sous forme de texte brut. Les caractères littéraux `<`, `>` et `&` provenant du
+contenu de fichiers ou de la sortie du shell sont préservés ; seule la sentinelle de fermeture exacte
+`</tool_result>` est échappée afin que le wrapper ne puisse pas être terminé par des données.
 
-When there are multiple tool results, the renderer sorts them to match the
-order of the preceding assistant tool calls.
+Lorsqu'il y a plusieurs résultats d'outils, le moteur de rendu les trie pour correspondre à
+l'ordre des appels d'outils de l'assistant qui précèdent.
 
-The same script also defines special task tokens for internal quick tasks such
-as title generation, search-query generation, action selection, authority
-classification, domain classification, and URL-read decisions. Those are
-separate from normal chat/tool rendering.
+Le même script définit également des tokens de tâche spéciaux pour des tâches internes rapides telles que
+la génération de titres, la génération de requêtes de recherche, la sélection d'actions, la classification d'autorité,
+la classification de domaine et les décisions de lecture d'URL. Celles-ci sont
+distinctes du rendu normal du chat/des outils.
 
-## Local Running Notes
+## Notes d'exécution locale
 
-The model card lists vLLM and SGLang examples for OpenAI-compatible serving.
-For local deployment, it recommends:
+La fiche modèle liste des exemples vLLM et SGLang pour un service compatible OpenAI.
+Pour un déploiement local, elle recommande :
 
 - `temperature = 1.0`
 - `top_p = 1.0`
-- At least 384K context for Think Max
+- Au moins 384K de contexte pour Think Max
 
-These are deployment recommendations from the model card, not necessarily the
-same settings used for deterministic benchmarking. DS4 keeps `top_p=1.0` but
-adds a local `min_p=0.05` default to avoid sampling tokens whose probability is
-far below the best token.
+Ce sont des recommandations de déploiement issues de la fiche modèle, pas nécessairement les
+mêmes réglages utilisés pour un benchmarking déterministe. DS4 conserve `top_p=1.0` mais
+ajoute une valeur par défaut locale `min_p=0.05` afin d'éviter d'échantillonner des tokens dont la probabilité est
+bien inférieure à celle du meilleur token.
 
-## Licensing
+## Licence
 
-The repository and model weights are licensed under the MIT License.
+Le dépôt et les poids du modèle sont sous licence MIT License.
 
 ## Citation
 
-The model card cites:
+La fiche modèle cite :
 
 ```bibtex
 @misc{deepseekai2026deepseekv4,
