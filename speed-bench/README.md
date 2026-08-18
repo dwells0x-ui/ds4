@@ -1,8 +1,8 @@
-## Benchmarking
+## Analyse comparative
 
-Here we collect prefill and generation speed obtained with different hardware.
+Nous rassemblons ici les vitesses de préremplissage (prefill) et de génération obtenues avec différents matériels.
 
-Run `ds4-bench` as:
+Lancez `ds4-bench` ainsi :
 
 ```
 ./ds4-bench \
@@ -14,22 +14,22 @@ Run `ds4-bench` as:
   --gen-tokens 128
 ```
 
-Provide PR including your numbers if your hardware was not already tested.
-Call the benchmark csv file something like `m3_max.csv` or alike, so that
-it is clear what hardware was used for the benchmark.
+Soumettez une PR incluant vos chiffres si votre matériel n'a pas encore été testé.
+Nommez le fichier csv du benchmark quelque chose comme `m3_max.csv` ou similaire, afin
+qu'il soit clair quel matériel a été utilisé pour le benchmark.
 
-To generate an SVG graph from a CSV file:
+Pour générer un graphique SVG à partir d'un fichier CSV :
 
 ```
 python3 speed-bench/plot_speed.py speed-bench/m3_max.csv --title "M3 Max t/s"
 ```
 
-The script uses only the Python standard library. By default it writes a file
-next to the CSV using the `_ts.svg` suffix, such as `speed-bench/m3_max_ts.svg`.
+Le script n'utilise que la bibliothèque standard de Python. Par défaut, il écrit un fichier
+à côté du CSV en utilisant le suffixe `_ts.svg`, comme `speed-bench/m3_max_ts.svg`.
 
-### Metal decode schedule A/B
+### Comparaison A/B du schedule de décodage Metal
 
-Build the balanced, same-engine Metal decode comparison with:
+Compilez la comparaison de décodage Metal équilibrée, sur le même moteur, avec :
 
 ```
 make metal-decode-schedule-bench
@@ -38,14 +38,14 @@ make metal-decode-schedule-bench
   --include-selection
 ```
 
-The harness prefills two sessions and alternates both variant order and
-variant-to-session assignment. It aborts unless every full-vocabulary logit
-row is bit-identical and, with `--include-selection`, both variants select the
-same non-EOS token. Use `--candidate-env NAME` to measure a rollback control,
-or `--help` to compare explicit split schedules.
+Le harnais préremplit deux sessions et alterne à la fois l'ordre des variantes et
+l'affectation variante-à-session. Il s'interrompt à moins que chaque ligne de logits
+sur le vocabulaire complet ne soit identique bit à bit et, avec `--include-selection`, que les deux variantes ne sélectionnent le
+même token non-EOS. Utilisez `--candidate-env NAME` pour mesurer un contrôle de rollback,
+ou `--help` pour comparer des schedules de découpage explicites.
 
-To compare the default pre-M5 ratio-4 compressor pack/transpose fusion with the
-legacy decode path, including token selection, use:
+Pour comparer la fusion pack/transpose par défaut du compresseur ratio-4 pré-M5 avec le
+chemin de décodage historique, y compris la sélection de token, utilisez :
 
 ```
 ./speed-bench/metal_decode_schedule_bench \
@@ -54,11 +54,11 @@ legacy decode path, including token selection, use:
   --tokens 1024
 ```
 
-### Metal prefill variant A/B
+### Comparaison A/B de la variante de préremplissage Metal
 
-Build the balanced prefill comparison. To compare the default resident pre-M5
-MXFP4 pair tail-SIMDgroup cull against the original pair kernel, make the
-rollback path the candidate:
+Compilez la comparaison de préremplissage équilibrée. Pour comparer le cull tail-SIMDgroup
+par défaut de la paire MXFP4 résidente pré-M5 au kernel de paire original, faites du
+chemin de rollback le candidat :
 
 ```
 make metal-prefill-variant-bench
@@ -66,17 +66,17 @@ make metal-prefill-variant-bench
   --candidate-env DS4_METAL_DISABLE_PRE_M5_MXFP4_MOE_MM_ID_PAIR_TAIL_SIMDGROUP_CULL
 ```
 
-To isolate the default routed-down tail-SIMDgroup cull from the retained pair
-default, use its down-specific rollback as the candidate:
+Pour isoler le cull tail-SIMDgroup routed-down par défaut de la paire par défaut
+conservée, utilisez son rollback spécifique au down comme candidat :
 
 ```
 ./speed-bench/metal_prefill_variant_bench \
   --candidate-env DS4_METAL_DISABLE_PRE_M5_MXFP4_MOE_MM_ID_DOWN_TAIL_SIMDGROUP_CULL
 ```
 
-The harness uses one Metal engine and fresh sessions for every run. It warms
-both variants with at least 32 tokens, alternates control/candidate order in
-ABBA and BAAB blocks, poisons host logit buffers before copying, and aborts
-unless every final full-vocabulary logit row is bit-identical. Defaults are an
-8192-token prefix, an automatically sized 8193-token context, and two repeats;
-use `--help` to override them.
+Le harnais utilise un seul moteur Metal et des sessions neuves pour chaque exécution. Il chauffe
+les deux variantes avec au moins 32 tokens, alterne l'ordre contrôle/candidat en
+blocs ABBA et BAAB, empoisonne les buffers de logits de l'hôte avant la copie, et s'interrompt
+à moins que chaque ligne finale de logits sur le vocabulaire complet ne soit identique bit à bit. Les valeurs par défaut sont un
+préfixe de 8192 tokens, un contexte de 8193 tokens dimensionné automatiquement, et deux répétitions ;
+utilisez `--help` pour les remplacer.
